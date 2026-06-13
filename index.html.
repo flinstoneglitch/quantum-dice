@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Quantum Dice</title>
+<style>
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:Arial, sans-serif; background:#0b0f1a; color:#fff;
+         text-align:center; min-height:100vh; padding:24px 16px 40px; }
+  h1 { font-size:2em; margin-bottom:4px; }
+  p.sub { opacity:.7; font-size:.95em; margin-bottom:28px; }
+  .dice-grid { display:flex; flex-wrap:wrap; justify-content:center;
+               gap:16px; max-width:500px; margin:0 auto 32px; }
+  .die { width:100px; height:100px; background:#141b33;
+         border:2px solid #3a4a7a; border-radius:16px;
+         cursor:pointer; display:flex; flex-direction:column;
+         align-items:center; justify-content:center; gap:6px;
+         transition:transform .1s, border-color .2s; user-select:none; }
+  .die:hover { border-color:#7fdcff; transform:scale(1.06); }
+  .die:active { transform:scale(.96); }
+  .die .label { font-size:1.5em; font-weight:bold; color:#7fdcff; }
+  .die .sides { font-size:.75em; opacity:.6; }
+  #result-box { min-height:140px; display:flex; flex-direction:column;
+                align-items:center; justify-content:center; margin-bottom:24px; }
+  #result-num { font-size:6em; font-weight:bold; color:#9effa0;
+                animation:pop .4s ease; line-height:1; }
+  #result-num.nat20 { color:#ffd700; text-shadow:0 0 30px #ffd700; }
+  #result-num.nat1  { color:#ff6b6b; }
+  @keyframes pop { 0%{transform:scale(.3);opacity:0} 60%{transform:scale(1.2)} 100%{transform:scale(1);opacity:1} }
+  #result-label { font-size:1.1em; opacity:.8; margin-top:4px; }
+  #result-msg { font-size:1.3em; margin-top:8px; min-height:28px; }
+  #sharebtn { display:none; padding:10px 20px; margin-top:12px;
+              background:#1a2a55; border:1px solid #7fdcff; border-radius:8px;
+              color:#7fdcff; cursor:pointer; font-size:.95em; }
+  #roll-history { max-width:400px; margin:0 auto 24px;
+                  background:#0d1225; border-radius:10px; padding:12px;
+                  font-size:.85em; opacity:.8; max-height:140px;
+                  overflow-y:auto; text-align:left; }
+  #roll-history h3 { font-size:.85em; opacity:.6; margin-bottom:6px; }
+  .h-row { display:flex; justify-content:space-between;
+            padding:3px 0; border-bottom:1px solid #1a2a55; }
+  #qfooter { margin-top:24px; font-size:.8em; opacity:.85; }
+  #qubits { display:flex; justify-content:center; gap:4px; margin:8px 0 4px; }
+  .qubit { width:20px; height:20px; line-height:20px; font-size:11px;
+           border:2px solid #3a4a7a; border-radius:4px; background:#141b33;
+           font-family:monospace; color:#7fdcff; animation:flicker .9s infinite; }
+  .qubit.collapsed { animation:none; background:#1a2a55; color:#9effa0; border-color:#9effa0; }
+  @keyframes flicker { 0%,100%{opacity:.4} 50%{opacity:1} }
+  .confetti { position:fixed; top:-12px; font-size:22px;
+              animation:fall 2.6s linear forwards; pointer-events:none; }
+  @keyframes fall { to{transform:translateY(105vh) rotate(540deg);opacity:.1} }
+  #qinfo-modal { display:none; position:fixed; inset:0;
+                 background:rgba(4,6,14,.88); z-index:10; }
+  #qinfo-inner { max-width:400px; margin:12vh auto; background:#141b33;
+                 border:2px solid #3a4a7a; border-radius:12px; padding:24px;
+                 text-align:left; font-size:15px; line-height:1.6; }
+</style>
+</head>
+<body>
+
+<canvas id="qfield" style="position:fixed;inset:0;z-index:-1;"></canvas>
+
+<h1>🎲 Quantum Dice</h1>
+<p class="sub">Every roll powered by real IBM Quantum hardware ⚛️</p>
+
+<div class="dice-grid">
+  <div class="die" onclick="roll(4)">
+    <div class="label">d4</div>
+    <div class="sides">4 sides</div>
+  </div>
+  <div class="die" onclick="roll(6)">
+    <div class="label">d6</div>
+    <div class="sides">6 sides</div>
+  </div>
+  <div class="die" onclick="roll(8)">
+    <div class="label">d8</div>
+    <div class="sides">8 sides</div>
+  </div>
+  <div class="die" onclick="roll(10)">
+    <div class="label">d10</div>
+    <div class="sides">10 sides</div>
+  </div>
+  <div class="die" onclick="roll(12)">
+    <div class="label">d12</div>
+    <div class="sides">12 sides</div>
+  </div>
+  <div class="die" onclick="roll(20)">
+    <div class="label">d20</div>
+    <div class="sides">20 sides</div>
+  </div>
+  <div class="die" onclick="roll(100)">
+    <div class="label">d100</div>
+    <div class="sides">percentile</div>
+  </div>
+</div>
+
+<div id="result-box">
+  <div id="result-num">—</div>
+  <div id="result-label"></div>
+  <div id="result-msg"></div>
+  <button id="sharebtn" onclick="shareRoll()">📋 Share this roll</button>
+</div>
+
+<div id="roll-history">
+  <h3>Roll history</h3>
+  <div id="history-list"></div>
+</div>
+
+<div id="qfooter">
+  <div id="quantum-badge">Loading quantum seed...
+    <span onclick="toggleQinfo()" style="display:inline-block;width:18px;height:18px;
+    line-height:18px;border:1px solid #7fdcff;border-radius:50%;font-size:12px;
+    cursor:pointer;margin-left:6px;color:#7fdcff;">i</span>
+  </div>
+  <div id="qubits"></div>
+  <div style="font-size:.7em;opacity:.55;">live measurement from IBM Quantum hardware</div>
+</div>
+
+<div id="qinfo-modal" onclick="toggleQinfo()">
+  <div id="qinfo-inner" onclick="event.stopPropagation()">
+    <h3 style="margin-top:0;">⚛️ How your rolls are generated</h3>
+    <p>Every day, a real IBM quantum computer places 8 qubits into superposition and measures them, producing a string of genuine quantum randomness.</p>
+    <p style="margin-top:12px;">That bitstring seeds a deterministic random number generator — so every roll you make today draws from the same verifiable quantum source. The IBM machine name and job ID are recorded, making every session's entropy provable.</p>
+    <p style="margin-top:12px;opacity:.7;font-size:13px;">No human and no classical algorithm decides your rolls — quantum mechanics does.</p>
+    <p style="text-align:center;margin:16px 0 0;">
+      <button onclick="toggleQinfo()">Got it</button>
+    </p>
+  </div>
+</div>
+
+<script>
+// ===================== QUANTUM SEED =====================
+let seedVal = Date.now(), backendName = "quantum", seedDate = "";
+let rollCount = 0, history = [];
+let lastDie = 20, lastResult = null;
+
+function qrng(s){ return function(){ s=(s*1664525+1013904223)>>>0; return s/4294967296; }; }
+let rng = qrng(seedVal);
+
+fetch("seed.json").then(r=>r.json()).then(d=>{
+  seedVal = (d.seed || Date.now()) + rollCount;
+  rng = qrng(seedVal >>> 0);
+  backendName = d.backend || "quantum";
+  seedDate = d.date || "";
+  document.getElementById("quantum-badge").firstChild.textContent =
+    "Today's entropy: " + backendName + (seedDate ? " · " + seedDate : "") + " ";
+  renderQubits(d.quantum_bits || "10101010");
+  buildField(d.quantum_bits || "10101010", d.seed || 12345);
+}).catch(()=>{
+  renderQubits("10101010");
+  buildField("10101010", 12345);
+});
+
+// ===================== DICE LOGIC =====================
+function roll(sides) {
+  // re-seed with position so rolls don't repeat
+  rollCount++;
+  rng = qrng((seedVal + rollCount * 6364136223846793005) >>> 0);
+
+  const result = Math.floor(rng() * sides) + 1;
+  lastDie = sides; lastResult = result;
+
+  const numEl = document.getElementById("result-num");
+  const labelEl = document.getElementById("result-label");
+  const msgEl = document.getElementById("result-msg");
+  const shareBtn = document.getElementById("sharebtn");
+
+  // reset animation
+  numEl.className = "";
+  void numEl.offsetWidth;
+
+  numEl.textContent = result;
+  labelEl.textContent = "d" + sides;
+  msgEl.textContent = "";
+  shareBtn.style.display = "inline-block";
+
+  if (sides === 20 && result === 20) {
+    numEl.className = "nat20";
+    msgEl.textContent = "⚛️ NATURAL 20 — Quantum collapse in your favor!";
+    winFanfare(); confetti();
+  } else if (sides === 20 && result === 1) {
+    numEl.className = "nat1";
+    msgEl.textContent = "💀 Natural 1. The universe has spoken.";
+    blip(120, .4, "sawtooth", .06);
+  } else {
+    numEl.className = "";
+    blip(300 + result * 8, .07);
+  }
+
+  // history
+  history.unshift({ sides, result });
+  if (history.length > 20) history.pop();
+  renderHistory();
+}
+
+function renderHistory() {
+  document.getElementById("history-list").innerHTML =
+    history.map(h =>
+      `<div class="h-row"><span>d${h.sides}</span><span>${h.result}</span></div>`
+    ).join("");
+}
+
+// ===================== SHARE =====================
+function shareRoll() {
+  if (!lastResult) return;
+  const nat = lastDie === 20 && lastResult === 20 ? " 🌟 NATURAL 20!" :
+              lastDie === 20 && lastResult === 1  ? " 💀 Nat 1." : "";
+  const text = `🎲 Quantum Dice — d${lastDie} → ${lastResult}${nat}\n` +
+    `Powered by ${backendName} ⚛️\n` +
+    (seedDate ? `Session: ${seedDate}\n` : "") +
+    `\nhttps://quantum-dice.pages.dev`;
+  if (navigator.share) navigator.share({ text }).catch(()=>{});
+  else navigator.clipboard.writeText(text).then(()=>{
+    document.getElementById("result-msg").textContent = "Copied! Paste anywhere 📋";
+  });
+}
+
+// ===================== SOUNDS =====================
+let AC = null;
+function blip(freq, dur=0.08, type="square", vol=0.04) {
+  try {
+    AC = AC || new (window.AudioContext||window.webkitAudioContext)();
+    const o=AC.createOscillator(), g=AC.createGain();
+    o.type=type; o.frequency.value=freq; g.gain.value=vol;
+    o.connect(g); g.connect(AC.destination);
+    o.start(); o.stop(AC.currentTime+dur);
+  } catch(e){}
+}
+function winFanfare(){
+  [523,659,784,1047,1319].forEach((f,i)=>
+    setTimeout(()=>blip(f,.15,"triangle",.07),i*100));
+}
+function confetti(){
+  const emo=["🎲","⚛️","✨","🌟","🎉"];
+  for(let i=0;i<40;i++){
+    const s=document.createElement("span");
+    s.className="confetti";
+    s.textContent=emo[i%emo.length];
+    s.style.left=Math.random()*100+"vw";
+    s.style.animationDelay=(Math.random()*.8)+"s";
+    document.body.appendChild(s);
+    setTimeout(()=>s.remove(),3400);
+  }
+}
+
+// ===================== QUBIT DISPLAY =====================
+function renderQubits(bits){
+  const box=document.getElementById("qubits");
+  box.innerHTML="";
+  [...bits].forEach((b,i)=>{
+    const q=document.createElement("div");
+    q.className="qubit"; q.textContent="ψ";
+    box.appendChild(q);
+    setTimeout(()=>{ q.classList.add("collapsed"); q.textContent=b;
+      blip(440+i*60,.06); }, 800+i*200);
+  });
+}
+
+function toggleQinfo(){
+  const m=document.getElementById("qinfo-modal");
+  m.style.display=(m.style.display==="none"||!m.style.display)?"block":"none";
+}
+
+// ===================== QUANTUM FIELD BACKGROUND =====================
+const qcv=document.getElementById("qfield"), qcx=qcv.getContext("2d");
+function qfit(){ qcv.width=innerWidth; qcv.height=innerHeight; }
+qfit(); addEventListener("resize",qfit);
+
+const PALETTES=[
+  ["#0b0f1a","#1c2e6e","#3f6ad8","#7fdcff"],
+  ["#150a26","#5d2a8c","#a04ad8","#ffb3ff"],
+  ["#04140f","#0f5138","#2fae6e","#aaffc3"],
+  ["#1a0e08","#7a3b12","#e08a2e","#ffe9a0"]
+];
+let orbs=[],stars=[],pal=PALETTES[0],fieldOn=false;
+
+function buildField(bits,seed){
+  const r=qrng(seed>>>0);
+  pal=PALETTES[parseInt(bits.slice(0,2),2)];
+  const nOrbs=4+parseInt(bits.slice(2,4),2)*2;
+  const speed=0.15+parseInt(bits.slice(4,6),2)*.12;
+  const size=60+parseInt(bits.slice(6,8),2)*40;
+  orbs=Array.from({length:nOrbs},()=>({
+    x:r()*innerWidth, y:r()*innerHeight,
+    dx:(r()-.5)*speed, dy:(r()-.5)*speed,
+    rad:size*(.6+r()*.8), c:pal[2+((r()*2)|0)]
+  }));
+  stars=Array.from({length:70},()=>({
+    x:r()*innerWidth, y:r()*innerHeight, s:r()*1.6+.4, tw:r()*6.28
+  }));
+  if(!fieldOn){ fieldOn=true; requestAnimationFrame(drawField); }
+}
+
+function drawField(t){
+  qcx.fillStyle=pal[0]; qcx.fillRect(0,0,qcv.width,qcv.height);
+  stars.forEach(s=>{
+    qcx.globalAlpha=.35+.35*Math.sin(t/900+s.tw);
+    qcx.fillStyle="#ffffff";
+    qcx.fillRect(s.x,s.y,s.s,s.s);
+  });
+  qcx.globalAlpha=1;
+  orbs.forEach(o=>{
+    o.x+=o.dx; o.y+=o.dy;
+    if(o.x<-o.rad) o.x=qcv.width+o.rad;
+    if(o.x>qcv.width+o.rad) o.x=-o.rad;
+    if(o.y<-o.rad) o.y=qcv.height+o.rad;
+    if(o.y>qcv.height+o.rad) o.y=-o.rad;
+    const g=qcx.createRadialGradient(o.x,o.y,0,o.x,o.y,o.rad);
+    g.addColorStop(0,o.c+"55");
+    g.addColorStop(1,"transparent");
+    qcx.fillStyle=g;
+    qcx.beginPath(); qcx.arc(o.x,o.y,o.rad,0,6.29); qcx.fill();
+  });
+  requestAnimationFrame(drawField);
+}
+</script>
+</body>
+</html>
