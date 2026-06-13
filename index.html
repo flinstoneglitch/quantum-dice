@@ -209,7 +209,7 @@ function shareRoll() {
   const text = `🎲 Quantum Dice — d${lastDie} → ${lastResult}${nat}\n` +
     `Powered by ${backendName} ⚛️\n` +
     (seedDate ? `Session: ${seedDate}\n` : "") +
-    `\nhttps://quantum-dice.pages.dev`;
+    `\nhttps://quantum-dice-bck.pages.dev`;
   if (navigator.share) navigator.share({ text }).catch(()=>{});
   else navigator.clipboard.writeText(text).then(()=>{
     document.getElementById("result-msg").textContent = "Copied! Paste anywhere 📋";
