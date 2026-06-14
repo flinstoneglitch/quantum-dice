@@ -160,7 +160,7 @@ fetch("seed.json").then(r=>r.json()).then(d=>{
 function roll(sides) {
   // re-seed with position so rolls don't repeat
   rollCount++;
-  rng = qrng((seedVal + rollCount * 6364136223846793005) >>> 0);
+rng = qrng((seedVal + rollCount * 6364136223846793005 + (Date.now() & 0xFFFF)) >>> 0);
 
   const result = Math.floor(rng() * sides) + 1;
   lastDie = sides; lastResult = result;
