@@ -320,5 +320,212 @@ function drawField(t){
   requestAnimationFrame(drawField);
 }
 </script>
+
+<style id="qentropy-dice-style">
+  #qentropy-dice-footer{
+    margin:28px auto 12px auto;
+    text-align:center;
+    font-family:monospace;
+    color:#dfffd6;
+    max-width:620px;
+  }
+
+  #qentropy-dice-powered{
+    color:#ff4dff;
+    font-weight:900;
+    font-size:18px;
+    text-shadow:0 0 12px #ff4dff;
+    margin-bottom:8px;
+  }
+
+  #qentropy-dice-hardware{
+    color:#9dff57;
+    font-weight:800;
+    font-size:13px;
+    text-shadow:0 0 8px #9dff57;
+    margin-bottom:10px;
+  }
+
+  #qentropy-dice-bits{
+    display:flex;
+    justify-content:center;
+    gap:6px;
+    flex-wrap:wrap;
+    margin-top:8px;
+  }
+
+  #qentropy-dice-bits div{
+    width:22px;
+    height:22px;
+    border:1px solid #9dff57;
+    border-radius:5px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    color:#9dff57;
+    background:rgba(0,0,0,.42);
+    box-shadow:0 0 10px rgba(157,255,87,.55);
+    font-weight:900;
+    font-size:12px;
+  }
+</style>
+
+<script id="qentropy-dice-engine">
+(function(){
+  const API = "https://q-runtime.onrender.com";
+  const KEY = "qentropy-demo-key";
+
+  function today(){
+    return new Date().toISOString().slice(0,10);
+  }
+
+  function hashSeed(str){
+    str = String(str || "qentropy");
+    let h = 2166136261 >>> 0;
+
+    for(let i=0;i<str.length;i++){
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+
+    return h >>> 0;
+  }
+
+  function seededRandomFactory(seed){
+    let state = hashSeed(seed);
+
+    return function(){
+      state += 0x6D2B79F5;
+      let t = state;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function seedToBits(seed){
+    const raw = String(seed || "");
+    const hex = raw.replace(/[^a-fA-F0-9]/g,"");
+
+    if(hex.length){
+      return hex.slice(0,4).split("")
+        .map(ch => parseInt(ch,16).toString(2).padStart(4,"0"))
+        .join("")
+        .slice(0,8);
+    }
+
+    const bits = raw.replace(/[^01]/g,"");
+
+    if(bits.length){
+      return bits.slice(0,8).padEnd(8,"0");
+    }
+
+    return "01010110";
+  }
+
+  function drawFooter(seed, meta){
+    let footer = document.getElementById("qentropy-dice-footer");
+
+    if(!footer){
+      footer = document.createElement("div");
+      footer.id = "qentropy-dice-footer";
+      document.body.appendChild(footer);
+    }
+
+    const source = meta?.source || "hybrid";
+
+    const hardware =
+      meta?.backend ||
+      meta?.hardware ||
+      meta?.device ||
+      meta?.ibm_backend ||
+      meta?.source_name ||
+      "QeNTROPY hybrid source";
+
+    footer.innerHTML = `
+      <div id="qentropy-dice-powered">⚛ Powered by QeNTROPY Engine</div>
+      <div id="qentropy-dice-hardware">
+        Dice entropy seed via QeNTROPY · source: ${source} · hardware: ${hardware}
+      </div>
+      <div id="qentropy-dice-bits"></div>
+    `;
+
+    const bits = seedToBits(seed);
+    const row = document.getElementById("qentropy-dice-bits");
+
+    bits.split("").forEach(bit => {
+      const box = document.createElement("div");
+      box.textContent = bit;
+      row.appendChild(box);
+    });
+  }
+
+  async function loadQentropyDiceSeed(){
+    const seedKey = "qentropy_dice_seed_" + today();
+    const metaKey = "qentropy_dice_meta_" + today();
+
+    let seed = localStorage.getItem(seedKey);
+    let meta = null;
+
+    try{
+      meta = JSON.parse(localStorage.getItem(metaKey) || "null");
+    }catch(e){}
+
+    if(seed){
+      drawFooter(seed, meta || {});
+      return { seed, meta: meta || {} };
+    }
+
+    const res = await fetch(API + "/api/seed?source=hybrid", {
+      headers:{
+        "x-api-key": KEY
+      }
+    });
+
+    const data = await res.json();
+
+    seed =
+      data.seed ||
+      data.seed_hex ||
+      data.value ||
+      String(Date.now());
+
+    meta = data;
+
+    localStorage.setItem(seedKey, seed);
+    localStorage.setItem(metaKey, JSON.stringify(meta));
+
+    drawFooter(seed, meta);
+
+    return { seed, meta };
+  }
+
+  function connectDice(seed){
+    const rand = seededRandomFactory(seed);
+
+    window.qentropyDiceRoll = function(sides){
+      sides = Number(sides || 6);
+      return 1 + Math.floor(rand() * sides);
+    };
+
+    Math.random = rand;
+
+    console.log("QeNTROPY Dice Seed:", seed);
+    console.log("QeNTROPY Dice connected.");
+    console.log("Use qentropyDiceRoll(6) for a QeNTROPY-backed d6.");
+  }
+
+  loadQentropyDiceSeed()
+    .then(({seed}) => connectDice(seed))
+    .catch(err => {
+      const fallback = "qentropy-dice-fallback-" + today();
+      drawFooter(fallback, { source:"local fallback" });
+      connectDice(fallback);
+      console.log("QeNTROPY Dice fallback active:", err);
+    });
+
+})();
+</script>
+
 </body>
 </html>
