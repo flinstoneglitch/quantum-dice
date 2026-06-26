@@ -1,0 +1,40 @@
+name: Update Quantum Seed
+
+on:
+  schedule:
+    - cron: "0 12 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-seed:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install qiskit qiskit-ibm-runtime
+
+      - name: Run seed job
+        env:
+          IBM_QUANTUM_TOKEN: ${{ secrets.IBM_QUANTUM_TOKEN }}
+        run: |
+          python quantum_seed_job.py
+
+      - name: Commit seed.json
+        run: |
+          git config user.name "QEntropy Bot"
+          git config user.email "qentropy@artphorm.xyz"
+          git add seed.json
+          git commit -m "Update daily quantum seed" || echo "No changes"
+          git push
