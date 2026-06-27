@@ -107,27 +107,6 @@
   <div id="history-list"></div>
 </div>
 
-<div id="qfooter">
-  <div id="quantum-badge">Loading quantum seed...
-    <span onclick="toggleQinfo()" style="display:inline-block;width:18px;height:18px;
-    line-height:18px;border:1px solid #7fdcff;border-radius:50%;font-size:12px;
-    cursor:pointer;margin-left:6px;color:#7fdcff;">i</span>
-  </div>
-  <div id="qubits"></div>
-  <div style="font-size:.7em;opacity:.55;">Daily entropy seed via QeNTROPY Engine</div>
-</div>
-
-<div id="qinfo-modal" onclick="toggleQinfo()">
-  <div id="qinfo-inner" onclick="event.stopPropagation()">
-    <h3 style="margin-top:0;">⚛️ How your rolls are generated</h3>
-    <p>Every day, a real IBM quantum computer places 8 qubits into superposition and measures them, producing a string of genuine quantum randomness.</p>
-    <p style="margin-top:12px;">That bitstring seeds a deterministic random number generator — so every roll you make today draws from the same verifiable quantum source. The IBM machine name and job ID are recorded, making every session's entropy provable.</p>
-    <p style="margin-top:12px;opacity:.7;font-size:13px;">No human and no classical algorithm decides your rolls — quantum mechanics does.</p>
-    <p style="text-align:center;margin:16px 0 0;">
-      <button onclick="toggleQinfo()">Got it</button>
-    </p>
-  </div>
-</div>
 
 <script>
 // ===================== QUANTUM SEED =====================
@@ -143,8 +122,6 @@ fetch("seed.json").then(r=>r.json()).then(d=>{
   rng = qrng(seedVal >>> 0);
   backendName = d.backend || "quantum";
   seedDate = d.date || "";
-  document.getElementById("quantum-badge").firstChild.textContent =
-    "Today's entropy: " + backendName + (seedDate ? " · " + seedDate : "") + " ";
   renderQubits(d.quantum_bits || "10101010");
   buildField(d.quantum_bits || "10101010", d.seed || 12345);
 }).catch(()=>{
@@ -248,6 +225,7 @@ function confetti(){
 // ===================== QUBIT DISPLAY =====================
 function renderQubits(bits){
   const box=document.getElementById("qubits");
+  if(!box) return;
   box.innerHTML="";
   [...bits].forEach((b,i)=>{
     const q=document.createElement("div");
