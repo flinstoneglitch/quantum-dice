@@ -62,7 +62,7 @@
 <canvas id="qfield" style="position:fixed;inset:0;z-index:-1;"></canvas>
 
 <h1>🎲 q20 - Quantum Dice</h1>
-<p class="sub">Every roll powered by real IBM Quantum hardware ⚛️</p>
+<p class="sub">Daily entropy seed via QeNTROPY ⚛️</p>
 <div id="result-box">
   <div id="result-num"></div>
   <div id="result-label"></div>
@@ -102,10 +102,6 @@
 </div>
 
 
-<div class="dice-grid">
-  ... all the dice ...
-</div>
-
 <div id="roll-history">
   <h3>Roll history</h3>
   <div id="history-list"></div>
@@ -118,7 +114,7 @@
     cursor:pointer;margin-left:6px;color:#7fdcff;">i</span>
   </div>
   <div id="qubits"></div>
-  <div style="font-size:.7em;opacity:.55;">live measurement from IBM Quantum hardware</div>
+  <div style="font-size:.7em;opacity:.55;">Daily entropy seed via QeNTROPY Engine</div>
 </div>
 
 <div id="qinfo-modal" onclick="toggleQinfo()">
@@ -158,11 +154,11 @@ fetch("seed.json").then(r=>r.json()).then(d=>{
 
 // ===================== DICE LOGIC =====================
 function roll(sides) {
-  // re-seed with position so rolls don't repeat
   rollCount++;
-rng = qrng((seedVal + rollCount * 6364136223846793005 + (Date.now() & 0xFFFF)) >>> 0);
-
-  const result = Math.floor(rng() * sides) + 1;
+  // Use QeNTROPY-seeded roll when the engine is ready, otherwise LCG fallback
+  const result = (typeof window.qentropyDiceRoll === "function")
+    ? window.qentropyDiceRoll(sides)
+    : (function(){ rng = qrng((seedVal + rollCount * 6364136223846793005) >>> 0); return Math.floor(rng() * sides) + 1; })();
   lastDie = sides; lastResult = result;
 
   const numEl = document.getElementById("result-num");
@@ -214,7 +210,7 @@ function shareRoll() {
   const text = `🎲 Quantum Dice — d${lastDie} → ${lastResult}${nat}\n` +
     `Powered by ${backendName} ⚛️\n` +
     (seedDate ? `Session: ${seedDate}\n` : "") +
-    `\nhttps://quantum-dice-bck.pages.dev`;
+    `\nhttps://flinstoneglitch.github.io/quantum-dice/`;
   if (navigator.share) navigator.share({ text }).catch(()=>{});
   else navigator.clipboard.writeText(text).then(()=>{
     document.getElementById("result-msg").textContent = "Copied! Paste anywhere 📋";
@@ -373,156 +369,155 @@ function drawField(t){
 <script id="qentropy-dice-engine">
 (function(){
   const API = "https://q-runtime.onrender.com";
-  const KEY = "qentropy-demo-key";
+  // No API key — /api/daily-seed is a public endpoint
 
-  function today(){
-    return new Date().toISOString().slice(0,10);
+  // All date math in LA time to match the server's daily-seed cache key
+  function getLADate(){
+    return new Date().toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" });
   }
 
-  function hashSeed(str){
-    str = String(str || "qentropy");
+  // Per-page-load nonce: makes roll sequences differ between sessions while
+  // keeping them fully determined by (dailySeed + sides + rollCounter + nonce)
+  const sessionNonce = crypto.getRandomValues(new Uint32Array(1))[0].toString(16);
+
+  let dailySeed = null;
+  let rollCounter = 0;
+
+  // FNV-1a 32-bit hash — fast, good distribution, sync
+  function fnv32a(str){
     let h = 2166136261 >>> 0;
-
-    for(let i=0;i<str.length;i++){
+    for(let i = 0; i < str.length; i++){
       h ^= str.charCodeAt(i);
-      h = Math.imul(h, 16777619);
+      h = Math.imul(h, 16777619) >>> 0;
     }
-
-    return h >>> 0;
+    return h;
   }
 
-  function seededRandomFactory(seed){
-    let state = hashSeed(seed);
-
-    return function(){
-      state += 0x6D2B79F5;
-      let t = state;
-      t = Math.imul(t ^ (t >>> 15), t | 1);
-      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
+  // Derive each roll deterministically from (seed : sides : counter : nonce)
+  // Rolls vary because rollCounter increments; sessions vary because nonce differs
+  function computeRoll(sides){
+    rollCounter++;
+    const input = dailySeed + ":" + sides + ":" + rollCounter + ":" + sessionNonce;
+    return (fnv32a(input) % sides) + 1;
   }
 
   function seedToBits(seed){
-    const raw = String(seed || "");
-    const hex = raw.replace(/[^a-fA-F0-9]/g,"");
-
-    if(hex.length){
-      return hex.slice(0,4).split("")
-        .map(ch => parseInt(ch,16).toString(2).padStart(4,"0"))
-        .join("")
-        .slice(0,8);
+    const hex = String(seed || "").replace(/[^a-fA-F0-9]/g, "");
+    if(hex.length >= 2){
+      return hex.slice(0, 4).split("")
+        .map(ch => parseInt(ch, 16).toString(2).padStart(4, "0"))
+        .join("").slice(0, 8);
     }
-
-    const bits = raw.replace(/[^01]/g,"");
-
-    if(bits.length){
-      return bits.slice(0,8).padEnd(8,"0");
-    }
-
     return "01010110";
   }
 
-  function drawFooter(seed, meta){
-    let footer = document.getElementById("qentropy-dice-footer");
+  function drawFooter(seedData){
+    // Update the existing #quantum-badge in qfooter
+    const badge = document.getElementById("quantum-badge");
+    if(badge && badge.childNodes[0]){
+      const src  = seedData.source || "hybrid";
+      const date = seedData.date   || getLADate();
+      badge.childNodes[0].textContent =
+        "Today's QeNTROPY seed · " + src + " · " + date + " ";
+    }
 
+    // Build / update the QeNTROPY footer block
+    let footer = document.getElementById("qentropy-dice-footer");
     if(!footer){
       footer = document.createElement("div");
       footer.id = "qentropy-dice-footer";
       document.body.appendChild(footer);
     }
 
-    const source = meta?.source || "hybrid";
+    const score  = seedData.entropy_score != null ? seedData.entropy_score : "—";
+    const stable = seedData.stable_for_day ? "✓ stable all day" : seedData.source || "local";
 
-    const hardware =
-      meta?.backend ||
-      meta?.hardware ||
-      meta?.device ||
-      meta?.ibm_backend ||
-      meta?.source_name ||
-      "QeNTROPY hybrid source";
+    footer.innerHTML =
+      '<div id="qentropy-dice-powered">⚛ Powered by QeNTROPY Engine</div>' +
+      '<div id="qentropy-dice-hardware">' +
+        "Daily entropy seed via QeNTROPY" +
+        " · source: " + (seedData.source || "hybrid") +
+        " · date: "   + (seedData.date   || getLADate()) +
+        " · entropy: " + score +
+        " · " + stable +
+      "</div>" +
+      '<div id="qentropy-dice-bits"></div>';
 
-    footer.innerHTML = `
-      <div id="qentropy-dice-powered">⚛ Powered by QeNTROPY Engine</div>
-      <div id="qentropy-dice-hardware">
-        Dice entropy seed via QeNTROPY · source: ${source} · hardware: ${hardware}
-      </div>
-      <div id="qentropy-dice-bits"></div>
-    `;
-
-    const bits = seedToBits(seed);
-    const row = document.getElementById("qentropy-dice-bits");
-
-    bits.split("").forEach(bit => {
+    const bits = seedToBits(seedData.seed || "");
+    const row  = document.getElementById("qentropy-dice-bits");
+    bits.split("").forEach(function(bit){
       const box = document.createElement("div");
       box.textContent = bit;
       row.appendChild(box);
     });
   }
 
-  async function loadQentropyDiceSeed(){
-    const seedKey = "qentropy_dice_seed_" + today();
-    const metaKey = "qentropy_dice_meta_" + today();
+  async function loadDailySeed(){
+    const today    = getLADate();
+    const cacheKey = "qentropy_dice_daily_" + today;
 
-    let seed = localStorage.getItem(seedKey);
-    let meta = null;
-
+    // (a) QeNTROPY daily endpoint — public, no key required
     try{
-      meta = JSON.parse(localStorage.getItem(metaKey) || "null");
-    }catch(e){}
+      const cached = localStorage.getItem(cacheKey);
+      let seedData;
 
-    if(seed){
-      drawFooter(seed, meta || {});
-      return { seed, meta: meta || {} };
+      if(cached){
+        seedData = JSON.parse(cached);
+      } else {
+        const res = await fetch(API + "/api/daily-seed?app=q20");
+        if(!res.ok) throw new Error("HTTP " + res.status);
+        seedData = await res.json();
+        if(!seedData.ok || !seedData.seed) throw new Error("bad response");
+        localStorage.setItem(cacheKey, JSON.stringify(seedData));
+      }
+
+      dailySeed = seedData.seed;
+      drawFooter(seedData);
+      console.log("QeNTROPY Dice seed source:", seedData);
+      return;
+
+    } catch(err){
+      console.log("QeNTROPY daily-seed unavailable:", err.message);
     }
 
-    const res = await fetch(API + "/api/seed?source=hybrid", {
-      headers:{
-        "x-api-key": KEY
-      }
-    });
+    // (b) Local seed.json — stale but deterministic
+    try{
+      const res = await fetch("seed.json");
+      if(!res.ok) throw new Error("HTTP " + res.status);
+      const data = await res.json();
+      if(!data.seed) throw new Error("missing seed field");
 
-    const data = await res.json();
+      dailySeed = String(data.seed);
+      drawFooter({ seed: dailySeed, source: "seed.json",
+                   date: data.date || today, stable_for_day: false,
+                   entropy_score: "—" });
+      console.log("QeNTROPY Dice seed source: seed.json", data);
+      return;
 
-    seed =
-      data.seed ||
-      data.seed_hex ||
-      data.value ||
-      String(Date.now());
+    } catch(err2){
+      console.log("seed.json unavailable:", err2.message);
+    }
 
-    meta = data;
-
-    localStorage.setItem(seedKey, seed);
-    localStorage.setItem(metaKey, JSON.stringify(meta));
-
-    drawFooter(seed, meta);
-
-    return { seed, meta };
+    // (c) Deterministic LA-date hash — never random, always reproducible
+    dailySeed = "qentropy-dice-" + today;
+    drawFooter({ seed: dailySeed, source: "local date hash",
+                 date: today, stable_for_day: true, entropy_score: "—" });
+    console.log("QeNTROPY Dice seed source: local date hash", today);
   }
 
-  function connectDice(seed){
-    const rand = seededRandomFactory(seed);
+  // Exposed to roll() in the main script
+  window.qentropyDiceRoll = function(sides){
+    sides = Number(sides) || 6;
+    if(!dailySeed){
+      // Engine still loading — plain Math.random as last resort
+      return Math.floor(Math.random() * sides) + 1;
+    }
+    return computeRoll(sides);
+  };
 
-    window.qentropyDiceRoll = function(sides){
-      sides = Number(sides || 6);
-      return 1 + Math.floor(rand() * sides);
-    };
-
-    Math.random = rand;
-
-    console.log("QeNTROPY Dice Seed:", seed);
-    console.log("QeNTROPY Dice connected.");
-    console.log("Use qentropyDiceRoll(6) for a QeNTROPY-backed d6.");
-  }
-
-  loadQentropyDiceSeed()
-    .then(({seed}) => connectDice(seed))
-    .catch(err => {
-      const fallback = "qentropy-dice-fallback-" + today();
-      drawFooter(fallback, { source:"local fallback" });
-      connectDice(fallback);
-      console.log("QeNTROPY Dice fallback active:", err);
-    });
+  loadDailySeed().catch(function(err){
+    console.log("QeNTROPY Dice init error:", err);
+  });
 
 })();
 </script>
