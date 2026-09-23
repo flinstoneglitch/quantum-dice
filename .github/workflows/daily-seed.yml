@@ -1,0 +1,73 @@
+name: Daily Quantum Seed
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 09:00 UTC = 02:00 America/Los_Angeles (well after LA midnight rollover)
+    - cron: "0 9 * * *"
+
+jobs:
+  update-seed:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch daily seed from QeNTROPY and write seed.json
+        run: |
+          python3 - << 'PYEOF'
+          import json, time, urllib.request, sys
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+
+          url = "https://q-runtime.onrender.com/api/daily-seed?app=q20"
+
+          # Render's free tier spins the service down when idle, and a cold
+          # start can take 40-50+ seconds to respond. Retry with a longer
+          # timeout instead of giving up after one shot — the first attempt
+          # also serves as the wake-up call for the ones after it.
+          attempts = 4
+          data = None
+          for attempt in range(1, attempts + 1):
+              try:
+                  with urllib.request.urlopen(url, timeout=45) as r:
+                      data = json.loads(r.read())
+                  break
+              except Exception as e:
+                  print(f"Attempt {attempt}/{attempts} failed: {e}", file=sys.stderr)
+                  if attempt == attempts:
+                      print(f"ERROR: could not reach {url} after {attempts} attempts", file=sys.stderr)
+                      sys.exit(1)
+                  time.sleep(15)
+
+          if not data.get("ok") or not data.get("seed"):
+              print(f"ERROR: bad response: {data}", file=sys.stderr)
+              sys.exit(1)
+
+          # Match the app's LA-timezone date logic
+          la_date = datetime.now(ZoneInfo("America/Los_Angeles")).strftime("%Y-%m-%d")
+
+          seed_json = {
+              "date": data.get("date", la_date),
+              "seed": data["seed_safe"],        # plain integer ≤ 2^52, safe for BigInt(String(...))
+              "source": data.get("source", "hybrid"),
+              "entropy_score": data.get("entropy_score"),
+              "stable_for_day": True,
+          }
+
+          with open("seed.json", "w") as f:
+              json.dump(seed_json, f, indent=2)
+              f.write("\n")
+
+          print("seed.json updated:", json.dumps(seed_json))
+          PYEOF
+
+      - name: Commit updated seed.json
+        run: |
+          git config user.name "seed-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add seed.json
+          git diff --cached --quiet || git commit -m "daily quantum seed"
+          git push

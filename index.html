@@ -117,17 +117,10 @@ let lastDie = 20, lastResult = null;
 function qrng(s){ return function(){ s=(s*1664525+1013904223)>>>0; return s/4294967296; }; }
 let rng = qrng(seedVal);
 
-fetch("seed.json").then(r=>r.json()).then(d=>{
-  seedVal = (d.seed || Date.now()) + rollCount;
-  rng = qrng(seedVal >>> 0);
-  backendName = d.backend || "quantum";
-  seedDate = d.date || "";
-  renderQubits(d.quantum_bits || "10101010");
-  buildField(d.quantum_bits || "10101010", d.seed || 12345);
-}).catch(()=>{
-  renderQubits("10101010");
-  buildField("10101010", 12345);
-});
+// Paint an immediate default; the QeNTROPY engine below replaces this
+// with the live daily seed once it resolves (see drawFooter).
+renderQubits("10101010");
+buildField("10101010", 12345);
 
 // ===================== DICE LOGIC =====================
 function roll(sides) {
@@ -428,6 +421,17 @@ function drawField(t){
       box.textContent = bit;
       row.appendChild(box);
     });
+
+    // Drive the qubit-flicker animation and background field from this
+    // same live (or fallback) seed, replacing the placeholder shown at
+    // page load — these used to read a static, often stale seed.json.
+    const numericSeed = fnv32a(String(seedData.seed || ""));
+    seedVal = numericSeed + rollCount;
+    rng = qrng(seedVal >>> 0);
+    backendName = seedData.source || "quantum";
+    seedDate = seedData.date || getLADate();
+    if (typeof renderQubits === "function") renderQubits(bits);
+    if (typeof buildField === "function") buildField(bits, numericSeed);
   }
 
   async function loadDailySeed(){
