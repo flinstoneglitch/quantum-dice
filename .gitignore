@@ -1,0 +1,11 @@
+node_modules/
+
+# Capacitor-generated — synced from www/ via `npx cap sync`, don't hand-edit
+ios/App/App/public/
+
+# Xcode local state
+ios/App/Pods/
+ios/App/build/
+ios/**/xcuserdata/
+ios/**/*.xcuserstate
+.DS_Store

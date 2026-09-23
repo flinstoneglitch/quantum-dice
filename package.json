@@ -1,0 +1,28 @@
+{
+  "name": "quantum-dice",
+  "version": "1.0.0",
+  "description": "A browser dice roller (d4 · d6 · d8 · d10 · d12 · d20 · d100) whose daily entropy seed is sourced from the QeNTROPY Engine.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/flinstoneglitch/quantum-dice.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/flinstoneglitch/quantum-dice/issues"
+  },
+  "homepage": "https://github.com/flinstoneglitch/quantum-dice#readme",
+  "dependencies": {
+    "@capacitor/cli": "^8.5.2",
+    "@capacitor/core": "^8.5.2",
+    "@capacitor/haptics": "^8.0.2",
+    "@capacitor/ios": "^8.5.2",
+    "@capacitor/share": "^8.0.2"
+  }
+}
